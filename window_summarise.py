@@ -4,6 +4,11 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
+"""
+4. Engineer features (cf. Chapter 4), again describe your choices for setting, and analyse
+the usefulness of the resulting set of features.
+"""
+
 SPLIT_DIRS = {
     "training": "BOULDERING_DATA/batch1/training_set",
     "validation": "BOULDERING_DATA/batch1/validation_set",
@@ -12,9 +17,6 @@ SPLIT_DIRS = {
 
 # idea 2 # of final rows per attempt
 WINDOW_SIZES = [10, 20, 40, 60]  # Number of rows per attempt (e.g., 1 row = whole attempt, 2 rows = split attempt in half, etc.)
-
-
-# TODO duration fix feature
 
 def magnitude(df, x_col, y_col, z_col):
     """
@@ -97,7 +99,6 @@ def summarise_window(acc_window, lin_acc_window, gyro_window, gravity_window, or
 
     if acc_window.empty:
         return {
-            "duration_seconds": np.nan,
             "acc_mag_mean": np.nan,
             "acc_mag_std": np.nan,
             "acc_mag_min": np.nan,
@@ -131,9 +132,6 @@ def summarise_window(acc_window, lin_acc_window, gyro_window, gravity_window, or
             "roll_range": np.nan,
         }
     
-    # Duration, based on accelerometer recording
-    features["duration_seconds"] = acc_window["Time (s)"].max() - acc_window["Time (s)"].min()
-
     # Accelerometer magnitude
     acc_mag = magnitude(
         acc_window,
@@ -202,6 +200,7 @@ def summarize_attempt(attempt_folder, window_size=10):
     features = get_metadata(attempt_folder.name)
     features["attempt_id"] = attempt_folder.name
     features["window_count"] = window_size
+    features["duration_seconds"] = acc["Time (s)"].max() - acc["Time (s)"].min()
 
     # metadata by reading folder name (L1 N Y teo2026... --> difficulty=L1, style=N, topped=Y, participant=teo)
     length = min(len(acc), len(lin_acc), len(gyro), len(gravity), len(orientation))
@@ -290,5 +289,5 @@ if __name__ == "__main__":
             print(f"{split_name.title()} summary for window size {window_size}:")
             print(attempt_features.head())
 
-            output_name = f"FEATURES/{split_name}_bouldering_summary_{window_size}s.csv"
+            output_name = f"FEATURES/{split_name}_bouldering_summary_{window_size}.csv"
             attempt_features.to_csv(output_name, index=False)
