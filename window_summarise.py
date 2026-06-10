@@ -9,10 +9,12 @@ from pathlib import Path
 the usefulness of the resulting set of features.
 """
 
+# TODO highlight the final best model when printing results
+
 BOULDERING_ROOT = "BOULDERING_DATA/"
 
 # idea 2 # of final rows per attempt
-WINDOW_SIZES = [10, 20, 40, 60]  # Number of rows per attempt (e.g., 1 row = whole attempt, 2 rows = split attempt in half, etc.)
+WINDOW_SIZES = [1, 5, 10, 20, 50, 100]  # Number of rows per attempt (e.g., 1 row = whole attempt, 2 rows = split attempt in half, etc.)
 
 def magnitude(df, x_col, y_col, z_col):
     """
