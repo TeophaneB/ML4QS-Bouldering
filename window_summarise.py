@@ -9,11 +9,7 @@ from pathlib import Path
 the usefulness of the resulting set of features.
 """
 
-SPLIT_DIRS = {
-    "training": "BOULDERING_DATA/batch1/training_set",
-    "validation": "BOULDERING_DATA/batch1/validation_set",
-    "test": "BOULDERING_DATA/batch1/test_set",
-}
+BOULDERING_ROOT = "BOULDERING_DATA/"
 
 # idea 2 # of final rows per attempt
 WINDOW_SIZES = [10, 20, 40, 60]  # Number of rows per attempt (e.g., 1 row = whole attempt, 2 rows = split attempt in half, etc.)
@@ -41,33 +37,28 @@ def get_metadata(folder_name):
     """
     Regex to extract metadata from folder name: level, style, topped, participant, date
     Example folder name: "L1 N Y teo2026 2024-05-01 14-30
+    Numerical mappings: difficulty (1-3), style (1-3), topped (0-1)
     """
     parts = folder_name.split()
     features = {}
 
-    features["difficulty"] = parts[0] if len(parts) > 0 else ""
-    features["style"] = parts[1] if len(parts) > 1 else ""
+    diff = parts[0] if len(parts) > 0 else ""
+    if diff in {"L1", "L2"}:
+        diff = 1
+    elif diff in {"L3", "L4"}:
+        diff = 2
+    elif diff in {"L5", "L6"}:
+        diff = 3
+    else:
+        diff = 0
+    features["difficulty"] = diff
+
+    style = parts[1].upper() if len(parts) > 1 else ""
+    style_map = {"N": 1, "O": 2, "S": 3, "D": 4}
+    features["style"] = style_map.get(style, 0)
 
     topped_value = parts[2] if len(parts) > 2 else ""
-    features["topped"] = "N" if topped_value.lower() in {"n", "no"} else "Y"
-
-    remainder = " ".join(parts[3:]) if len(parts) > 3 else ""
-    match = re.match(
-        r"(?P<participant>[A-Za-z]+)?(?P<date>\d{4}-\d{2}-\d{2})?(?:\s+(?P<time>[\d:-]+)\s*(?P<ampm>[APMapm]{2})?)?",
-        remainder,
-    )
-    if match:
-        features["participant"] = match.group("participant") or ""
-        date_str = match.group("date") or ""
-        time_str = (match.group("time") or "").replace("-", ":")
-        ampm = match.group("ampm") or ""
-    else:
-        features["participant"] = remainder
-        date_str = ""
-        time_str = ""
-        ampm = ""
-
-    features["datetime"] = " ".join(part for part in [date_str, time_str, ampm] if part).strip()
+    features["topped"] = 1 if topped_value.lower() in {"y", "yes"} else 0
 
     return features
 
@@ -198,7 +189,7 @@ def summarize_attempt(attempt_folder, window_size=10):
     orientation = pd.read_csv(attempt_folder / "Orientation.csv")
 
     features = get_metadata(attempt_folder.name)
-    features["attempt_id"] = attempt_folder.name
+    attempt_id = attempt_folder.name
     features["window_count"] = window_size
     features["duration_seconds"] = acc["Time (s)"].max() - acc["Time (s)"].min()
 
@@ -219,7 +210,7 @@ def summarize_attempt(attempt_folder, window_size=10):
         window_features = summarise_window(acc_window, lin_acc_window, gyro_window, gravity_window, orientation_window)
         features.update(prefix_window_features(window_features, window_index))
 
-    return pd.DataFrame([features])
+    return pd.DataFrame([features]), attempt_id
 
 
 def summarize_batch(batch_root, drop_metadata=False, window_size=None):
@@ -248,8 +239,9 @@ def summarize_batch(batch_root, drop_metadata=False, window_size=None):
             print(f"Skipping {attempt_folder} - missing required files")
             continue
 
-        summary = summarize_attempt(attempt_folder, window_size=window_size)
-        summaries.append(summary)
+        summary_df, attempt_id = summarize_attempt(attempt_folder, window_size=window_size)
+        summary_df["_attempt_id"] = attempt_id
+        summaries.append(summary_df)
 
     if not summaries:
         return pd.DataFrame()
@@ -275,19 +267,40 @@ def summarize_dataset(batch_root, window_size):
 
     return summarize_batch(batch_root, drop_metadata=False, window_size=window_size)
 
+
+def summarize_all_data(window_size):
+    """Summarise the entire bouldering dataset.
+    Returns combined dataframe and mapping of index to attempt_id.
+    """
+    dataset_features = summarize_dataset(BOULDERING_ROOT, window_size=window_size)
+    
+    if dataset_features.empty:
+        return pd.DataFrame(), pd.DataFrame()
+    
+    # Extract attempt_id mapping before removing the column
+    attempt_mapping = dataset_features[["_attempt_id"]].copy()
+    attempt_mapping.reset_index(drop=True, inplace=True)
+    attempt_mapping.rename(columns={"_attempt_id": "attempt_id"}, inplace=True)
+    
+    # Remove temporary column from the main dataframe
+    dataset_features = dataset_features.drop(columns=["_attempt_id"])
+    
+    return dataset_features, attempt_mapping
+
 if __name__ == "__main__":
     os.makedirs("FEATURES", exist_ok=True)
 
-    # loop through each split and each window size, then save split-specific attempt tables
-    for split_name, split_root in SPLIT_DIRS.items():
-        for window_size in WINDOW_SIZES:
-            attempt_features = summarize_dataset(
-                split_root,
-                window_size=window_size
-            )
+    # loop through each window size and save attempt table
+    for window_size in WINDOW_SIZES:
+        attempt_features, attempt_mapping = summarize_all_data(window_size=window_size)
 
-            print(f"{split_name.title()} summary for window size {window_size}:")
-            print(attempt_features.head())
+        print(f"Summary for window size {window_size}:")
+        print(attempt_features.head())
 
-            output_name = f"FEATURES/{split_name}_bouldering_summary_{window_size}.csv"
-            attempt_features.to_csv(output_name, index=False)
+        output_name = f"FEATURES/bouldering_summary_{window_size}.csv"
+        attempt_features.to_csv(output_name, index=False)
+        
+        # Save the mapping file with index -> attempt_id mapping
+        mapping_name = f"FEATURES/bouldering_summary_{window_size}_mapping.csv"
+        attempt_mapping.to_csv(mapping_name, index=True)
+        print(f"Saved mapping to {mapping_name}")
