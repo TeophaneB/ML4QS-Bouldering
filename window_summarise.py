@@ -87,6 +87,40 @@ def prefix_window_features(window_features, window_index):
     """Prefix each feature name with the window index so columns stay unique."""
     return {f"window_{window_index + 1}_{key}": value for key, value in window_features.items()}
 
+
+def add_angle_sin_cos_features(df):
+    """Convert circular orientation direction features to sin/cos pairs.
+
+    Mean/min/max are direction-like angle summaries, so they need circular
+    encoding. Standard deviation and range stay as numeric variation measures.
+    """
+    angle_suffixes = (
+        "_yaw_mean", "_pitch_mean", "_roll_mean",
+        "_yaw_min", "_pitch_min", "_roll_min",
+        "_yaw_max", "_pitch_max", "_roll_max",
+    )
+
+    angle_columns = [
+        column
+        for column in df.columns
+        if column.endswith(angle_suffixes)
+    ]
+
+    if not angle_columns:
+        return df
+
+    df = df.copy()
+
+    for column in angle_columns:
+        radians = np.deg2rad(df[column])
+        df[f"{column}_sin"] = np.sin(radians)
+        df[f"{column}_cos"] = np.cos(radians)
+
+    # Remove direction-like angle summaries after circular encoding.
+    df = df.drop(columns=angle_columns)
+
+    return df
+
 def summarise_window(acc_window, lin_acc_window, gyro_window, gravity_window, orientation_window):
     features = {}
 
@@ -286,6 +320,9 @@ def summarize_all_data(window_size):
     
     # Remove temporary column from the main dataframe
     dataset_features = dataset_features.drop(columns=["_attempt_id"])
+
+    # Encode circular direction features once at the full-dataset level.
+    dataset_features = add_angle_sin_cos_features(dataset_features)
     
     return dataset_features, attempt_mapping
 
