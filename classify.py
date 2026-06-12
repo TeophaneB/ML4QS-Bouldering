@@ -8,10 +8,12 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import warnings
+from joblib.externals.loky import get_reusable_executor
 
 # --- Classifiers ---
 from sklearn.neighbors import KNeighborsClassifier
 classifier_knn = KNeighborsClassifier(n_neighbors=3)
+# FIXED: Using the locked 'classifier__' prefix matching our explicit Pipeline step label
 classifier_grid_knn = (
     'classifier__n_neighbors', [1, 3, 5, 10, 20, 50],
     'classifier__weights', ['uniform', 'distance']
@@ -69,7 +71,7 @@ Selectors = [
 
 INNER_SPLITS = 5
 OUTER_SPLITS = 3
-REPEATS = 1
+REPEATS = 10
 
 FEATURES_FOLDER_PATH = Path("FEATURES")
 
@@ -89,21 +91,25 @@ def classify_per_window_size():
         X = df.drop(columns=["difficulty"])  
         Y = df["difficulty"]  
 
-        # Clean constant features out upfront globally
-        selector_vt = VarianceThreshold(threshold=0.0)
+        # Drops absolute zero variance parameters upfront to help ANOVA steps
+        selector_init = VarianceThreshold(threshold=0.0)
         try:
-            X_transformed = selector_vt.fit_transform(X)
-            X = pd.DataFrame(X_transformed, columns=selector_vt.get_feature_names_out(X.columns))
+            X_transformed = selector_init.fit_transform(X)
+            X = pd.DataFrame(X_transformed, columns=selector_init.get_feature_names_out(X.columns))
         except ValueError:
             print(f"Skipping {file.name}: No features have variance above 0.")
             continue
       
         run_all_combinations(title=f"CLASSIFIED_{file.stem}", X=X, Y=Y)
+        
+        # CRITICAL DEADLOCK FIX: Force the backend to clear out multi-processing pools 
+        # before starting on a completely new file
+        get_reusable_executor().shutdown(wait=True)
 
 
 # --- Nested Cross-Validation Mechanics ---
 from sklearn.model_selection import StratifiedKFold, GridSearchCV, cross_validate
-from sklearn.pipeline import Pipeline, make_pipeline
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 def _safe_values(values, maximum):
@@ -128,7 +134,6 @@ def _build_parameter_grid(X, Y, selector_tuple, classifier_tuple):
     absolute_maximum = min(inner_train_size, n_features)
 
     for key in list(params_grid.keys()):
-        # Only cap structural parameters that rely on integer dimensions
         if key.endswith("__n_components") or key.endswith("__k"):
             params_grid[key] = _safe_values(params_grid[key], absolute_maximum)
 
@@ -136,33 +141,34 @@ def _build_parameter_grid(X, Y, selector_tuple, classifier_tuple):
             min_class_count = int(Y.value_counts().min())
             max_safe_neighbors = max(1, min(min_class_count, inner_train_size))
             params_grid[key] = _safe_values(params_grid[key], max_safe_neighbors)
-            
-        # Leave 'feature_selector__threshold' untouched since decimals are safe
 
     return params_grid
 
 def run_classification(X, Y, classifier, classifier_grid, selector, selector_grid, text=""):
     print(f"\n ------ {text} ------")
 
+    # FIXED: Explicit Pipeline setup locks names so they mirror hyperparameter grids precisely
     pipeline = Pipeline([
-        ('variance_threshold', VarianceThreshold(threshold=0.0)),
+        ('base_cleaning_vt', VarianceThreshold(threshold=0.0)),
         ('feature_selector', selector),
-        ('scaler', StandardScaler()),
+        ('standardscaler', StandardScaler()),
         ('classifier', classifier)
     ])
+    
     params_grid = _build_parameter_grid(X, Y, selector_grid, classifier_grid)
 
     all_outer_accuracies = []
     all_results_raw = []
 
+    # FIXED: Suppressed sklearn UndefinedMetricWarning alongside standard runtime warnings
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=RuntimeWarning, module="sklearn")
         warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
+        warnings.filterwarnings("ignore", message="Precision is ill-defined")
 
         for i in range(REPEATS):
             inner_cv = StratifiedKFold(n_splits=INNER_SPLITS, shuffle=True, random_state=i)
             
-            # CRITICAL FIX: n_jobs=None here prevents multiprocessing deadlocks
             grid_search = GridSearchCV(
                 estimator=pipeline,
                 param_grid=params_grid,
@@ -174,7 +180,6 @@ def run_classification(X, Y, classifier, classifier_grid, selector, selector_gri
 
             outer_cv = StratifiedKFold(n_splits=OUTER_SPLITS, shuffle=True, random_state=i + 100)
             
-            # CRITICAL FIX: Parallelize splits safely at the outer loop layer instead
             nested_scores = cross_validate(
                 grid_search,
                 X, Y,
@@ -186,11 +191,9 @@ def run_classification(X, Y, classifier, classifier_grid, selector, selector_gri
             print(f"Run {i+1}/{REPEATS} - Outer test accuracy scores: {nested_scores['test_accuracy']}")
             all_outer_accuracies.extend(nested_scores['test_accuracy'])
             
-            # Format performance metrics safely to string for storage & up to 3 decimal places
-            cleaned_scores = {k: [f"{v:.3f}" for v in vi] for k, vi in nested_scores.items()}
+            cleaned_scores = {k: v.tolist() for k, v in nested_scores.items()}
             all_results_raw.append(cleaned_scores)
 
-        # Fit final estimator to obtain the best parameter profile
         grid_search.fit(X, Y)
 
     stats = {
