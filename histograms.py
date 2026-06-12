@@ -1,36 +1,27 @@
 import matplotlib.pyplot as plt
 
-# Data
-difficulty_counts = {
-    "Easy": 9,
-    "Medium": 18,
-    "Hard": 8
-}
+# Looks at bouldering_summary_1.csv and creates histograms for the categorical variables: difficulty, topped, and style.
+import pandas as pd 
 
-topped_counts = {
-    "Yes": 26,
-    "No": 9
-}
-
-style_counts = {
-    "Normal": 19,
-    "Slab": 5,
-    "Overhang": 8,
-    "Dynamic": 2
-}
+# Load the dataset
+df = pd.read_csv("FEATURES/bouldering_summary_1.csv")
+# Count the occurrences of each category in the relevant columns
+difficulty_counts = df["difficulty"].value_counts().sort_index()
+topped_counts = df["topped"].value_counts().sort_index()
+style_counts = df["style"].value_counts().sort_index()
 
 # Create one figure with 3 plots next to each other
 fig, axes = plt.subplots(1, 3, figsize=(14, 4))
-
+# Plot histograms for each categorical variable
 datasets = [
     (difficulty_counts, "Boulder Difficulty", "Difficulty"),
     (topped_counts, "Completed Attempts", "Topped"),
     (style_counts, "Boulder Style", "Style")
 ]
-
+# Loop through each dataset and corresponding axis to create the bar plots
 for ax, (counts, title, xlabel) in zip(axes, datasets):
     categories = list(counts.keys())
-    values = list(counts.values())
+    values = list(counts.values)
 
     ax.bar(categories, values)
     ax.set_title(title)
@@ -48,5 +39,5 @@ plt.suptitle("Distribution of Batch 1 Bouldering Attempts", fontsize=14)
 plt.tight_layout()
 
 # Save as one image
-plt.savefig("batch1_categorical_distributions.png", dpi=300, bbox_inches="tight")
+plt.savefig("class_distributions(RECENT).png", dpi=300, bbox_inches="tight")
 plt.show()
