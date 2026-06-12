@@ -1,0 +1,7 @@
+window_size,selector,classifier,mean_f1_macro,std_f1_macro,mean_accuracy,source_file,best_parameters
+1,Variance Threshold,KNN,0.5177419016789501,0.13976366758382933,0.5407407407407407,CLASSIFIED_bouldering_summary_1_(12_12_11)_in5_out3.tsv,"{'classifier__n_neighbors': 1, 'classifier__weights': 'uniform', 'feature_selector__threshold': 0.1}"
+5,Variance Threshold,KNN,0.6042511295607269,0.11035031389722799,0.6037037037037035,CLASSIFIED_bouldering_summary_5_(12_12_43)_in5_out3.tsv,"{'classifier__n_neighbors': 1, 'classifier__weights': 'uniform', 'feature_selector__threshold': 0.01}"
+10,Variance Threshold,KNN,0.5951292335115866,0.07740731352585448,0.588888888888889,CLASSIFIED_bouldering_summary_10_(12_12_15)_in5_out3.tsv,"{'classifier__n_neighbors': 3, 'classifier__weights': 'distance', 'feature_selector__threshold': 0.001}"
+20,Variance Threshold,KNN,0.4998240366635619,0.11729102174827431,0.5074074074074074,CLASSIFIED_bouldering_summary_20_(12_12_36)_in5_out3.tsv,"{'classifier__n_neighbors': 1, 'classifier__weights': 'uniform', 'feature_selector__threshold': 0.001}"
+50,Variance Threshold,KNN,0.5520157547608526,0.0850137116732313,0.5555555555555555,CLASSIFIED_bouldering_summary_50_(12_12_47)_in5_out3.tsv,"{'classifier__n_neighbors': 1, 'classifier__weights': 'uniform', 'feature_selector__threshold': 0.001}"
+100,Variance Threshold,KNN,0.5352211122592959,0.10827531205916696,0.5462962962962963,CLASSIFIED_bouldering_summary_100_(12_12_20)_in5_out3.tsv,"{'classifier__n_neighbors': 5, 'classifier__weights': 'distance', 'feature_selector__threshold': 0.05}"

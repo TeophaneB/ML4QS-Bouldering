@@ -1,0 +1,2 @@
+window_size,classifier,selector,best_parameters,source_file,mean_accuracy,std_accuracy,mean_precision_macro,std_precision_macro,mean_recall_macro,std_recall_macro,mean_f1_macro,std_f1_macro
+5,KNN,Variance Threshold,"{'classifier__n_neighbors': 1, 'classifier__weights': 'uniform', 'feature_selector__threshold': 0.01}",CLASSIFIED_bouldering_summary_5_(12_12_43)_in5_out3.tsv,0.6037037037037035,0.10612258356958816,0.6427248677248677,0.10731553298539087,0.6433201058201059,0.108498289211364,0.6042511295607269,0.11035031389722799

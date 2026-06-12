@@ -272,6 +272,72 @@ def save_heatmap(best_window_df: pd.DataFrame, window_size: int, output_path: Pa
     plt.close(fig)
 
 
+def save_selection_pairs_by_window_size(all_results: pd.DataFrame, output_path: Path) -> None:
+    if all_results.empty:
+        print("Warning: no data available for the selection-pair comparison plot")
+        return
+
+    # Use the column names already produced by this script, but keep a small fallback.
+    if "selector" in all_results.columns:
+        selection_col = "selector"
+    elif "feature_selection" in all_results.columns:
+        selection_col = "feature_selection"
+    else:
+        raise KeyError("No selector/feature_selection column found in results DataFrame")
+
+    if "mean_f1_macro" in all_results.columns:
+        metric_col = "mean_f1_macro"
+        y_label = "Mean F1-score"
+    elif "mean_f1" in all_results.columns:
+        metric_col = "mean_f1"
+        y_label = "Mean F1-score"
+    elif "mean_score" in all_results.columns:
+        metric_col = "mean_score"
+        y_label = "Mean score"
+    else:
+        raise KeyError("No mean_f1_macro, mean_f1, or mean_score column found in results DataFrame")
+
+    plot_df = all_results.copy()
+    plot_df["model_selection_pair"] = plot_df["classifier"].astype(str) + " + " + plot_df[selection_col].astype(str)
+    plot_df = plot_df.sort_values(["window_size", "model_selection_pair"], kind="stable")
+
+    window_sizes = sorted(plot_df["window_size"].dropna().unique().tolist())
+    pairs = plot_df["model_selection_pair"].dropna().unique().tolist()
+
+    fig_width = max(10, 1.2 * len(window_sizes) + 0.6 * len(pairs))
+    fig, ax = plt.subplots(figsize=(fig_width, 6))
+
+    cmap = plt.cm.viridis
+    colors = cmap(np.linspace(0.1, 0.9, max(1, len(pairs))))
+
+    for idx, pair in enumerate(pairs):
+        pair_df = plot_df[plot_df["model_selection_pair"] == pair].sort_values("window_size")
+        x_values = pair_df["window_size"].to_numpy()
+        y_values = pair_df[metric_col].to_numpy(dtype=float)
+
+        ax.plot(
+            x_values,
+            y_values,
+            marker="o",
+            linewidth=1.8,
+            color=colors[idx],
+            label=pair,
+        )
+
+    ax.set_title("Classifier and Feature Selection Pair Performance by Window Size")
+    ax.set_xlabel("Window size")
+    ax.set_ylabel(y_label)
+    ax.set_xscale("log")
+    ax.set_xticks(window_sizes)
+    ax.set_xticklabels([str(window_size) for window_size in window_sizes])
+    ax.tick_params(axis="x", rotation=30)
+
+    ax.legend(bbox_to_anchor=(1.02, 1), loc="upper left", title="Model + selection pair")
+    plt.tight_layout(rect=[0, 0, 0.78, 1])
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+
 def print_best_model(best_row: pd.Series) -> None:
     print("\nBest overall model")
     print(f"best window size: {best_row['window_size']}")
@@ -307,10 +373,12 @@ def main() -> None:
     best_per_window_path = RESULTS_DIR / "best_model_per_window.csv"
     bar_chart_path = RESULTS_DIR / "best_macro_f1_per_window.png"
     heatmap_path = RESULTS_DIR / "best_window_macro_f1_heatmap.png"
+    selection_pairs_path = RESULTS_DIR / "classification_selection_pairs_by_window_size.png"
 
     all_results.to_csv(all_results_path, index=False)
     best_per_window.to_csv(best_per_window_path, index=False)
 
+    save_selection_pairs_by_window_size(all_results, selection_pairs_path)
     save_bar_chart(best_per_window, bar_chart_path)
 
     overall_best_index = all_results["mean_f1_macro"].idxmax()
