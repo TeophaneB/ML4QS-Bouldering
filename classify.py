@@ -13,31 +13,31 @@ import warnings
 from sklearn.neighbors import KNeighborsClassifier
 classifier_knn = KNeighborsClassifier(n_neighbors=3)
 classifier_grid_knn = (
-    'kneighborsclassifier__n_neighbors', [1, 3, 5, 10, 20, 50],
-    'kneighborsclassifier__weights', ['uniform', 'distance']
+    'classifier__n_neighbors', [1, 3, 5, 10, 20, 50],
+    'classifier__weights', ['uniform', 'distance']
 )
 
 from sklearn.linear_model import LogisticRegression
 classifier_logistic = LogisticRegression(max_iter=5000)
-classifier_grid_logistic = ('logisticregression__C', [0.001, 0.01, 0.1, 0.5, 1, 10])
+classifier_grid_logistic = ('classifier__C', [0.001, 0.01, 0.1, 0.5, 1, 10])
 
 from sklearn.svm import SVC
 classifier_svm = SVC()
 classifier_grid_svm = (
-    'svc__C', [0.001, 0.01, 0.1, 0.5, 1, 10], 
-    'svc__kernel', ['linear', 'rbf']
+    'classifier__C', [0.001, 0.01, 0.1, 0.5, 1, 10], 
+    'classifier__kernel', ['linear', 'rbf']
 )
 
 from sklearn.ensemble import RandomForestClassifier
 classifier_rf = RandomForestClassifier()
 classifier_grid_rf = (
-    'randomforestclassifier__n_estimators', [1, 3, 5, 10, 20, 50],
-    'randomforestclassifier__max_depth', [None, 5, 10, 20]
+    'classifier__n_estimators', [1, 3, 5, 10, 20, 50],
+    'classifier__max_depth', [None, 5, 10, 20]
 )
 
 from sklearn.tree import DecisionTreeClassifier
 classifier_dt = DecisionTreeClassifier()
-classifier_grid_dt = ('decisiontreeclassifier__max_depth', [None, 5, 10, 20])
+classifier_grid_dt = ('classifier__max_depth', [None, 5, 10, 20])
 
 Classifiers = [
  (classifier_knn, classifier_grid_knn, "KNN"),
@@ -47,48 +47,31 @@ Classifiers = [
  (classifier_dt, classifier_grid_dt, "Decision Tree"), 
 ]
 
-### Selectors
 
-# # Forward Selection
-# from sklearn.feature_selection import SequentialFeatureSelector
-# selector_forward = SequentialFeatureSelector(estimator=classifier_knn, direction="forward", cv=2, n_features_to_select=10, scoring="accuracy")
-# selector_grid_forward = ('sequentialfeatureselector__n_features_to_select', [2, 5, 10, 25])
-
-# # Mutual Information
-# from sklearn.feature_selection import SelectKBest, mutual_info_classif
-# selector_mi = SelectKBest(score_func=mutual_info_classif, k=10)
-# selector_grid_mi = ('selectkbest__k', [5, 10, 25])
-
-# Variance Threshold
+# --- Selectors ---
 from sklearn.feature_selection import VarianceThreshold
 selector_variance = VarianceThreshold(threshold=0.01)
-selector_grid_variance = ('variancethreshold__threshold', [0.001, 0.01, 0.05, 0.1])
+selector_grid_variance = ('feature_selector__threshold', [0.001, 0.01, 0.05, 0.1])
 
-# ANOVA 
 from sklearn.feature_selection import SelectKBest, f_classif
 selector_anova = SelectKBest(score_func=f_classif, k=10)
-selector_grid_anova = ('selectkbest__k', [5, 10, 25, 50, 100]) 
+selector_grid_anova = ('feature_selector__k', [5, 10, 25, 50, 100]) 
 
-# PCA 
 from sklearn.decomposition import PCA
 selector_pca = PCA(n_components=10)
-selector_grid_pca = ('pca__n_components', [5, 10, 25, 50, 100])
+selector_grid_pca = ('feature_selector__n_components', [5, 10, 25, 50, 100])
 
 Selectors = [
-(selector_variance, selector_grid_variance, "Variance Threshold"),
-(selector_anova, selector_grid_anova, "ANOVA"),
-(selector_pca, selector_grid_pca, "PCA"),
-
-# Skip these?
-#(selector_mi, selector_grid_mi, "Mutual Information"),
-#(selector_forward, selector_grid_forward, "Forward Selection"),
- ]
+    (selector_variance, selector_grid_variance, "Variance Threshold"),
+    (selector_pca, selector_grid_pca, "PCA"),
+    (selector_anova, selector_grid_anova, "ANOVA")
+]
 
 INNER_SPLITS = 5
 OUTER_SPLITS = 3
 REPEATS = 1
 
-FEATURES_FOLDER_PATH = Path("C:\\Users\\teoph\\OneDrive\\Documents\\Master\\P6\\ML4QS\\FEATURES")
+FEATURES_FOLDER_PATH = Path("FEATURES")
 
 def classify_per_window_size():
     """ train a classifier to predict difficulty """
@@ -120,7 +103,7 @@ def classify_per_window_size():
 
 # --- Nested Cross-Validation Mechanics ---
 from sklearn.model_selection import StratifiedKFold, GridSearchCV, cross_validate
-from sklearn.pipeline import make_pipeline
+from sklearn.pipeline import Pipeline, make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 def _safe_values(values, maximum):
@@ -145,6 +128,7 @@ def _build_parameter_grid(X, Y, selector_tuple, classifier_tuple):
     absolute_maximum = min(inner_train_size, n_features)
 
     for key in list(params_grid.keys()):
+        # Only cap structural parameters that rely on integer dimensions
         if key.endswith("__n_components") or key.endswith("__k"):
             params_grid[key] = _safe_values(params_grid[key], absolute_maximum)
 
@@ -152,13 +136,20 @@ def _build_parameter_grid(X, Y, selector_tuple, classifier_tuple):
             min_class_count = int(Y.value_counts().min())
             max_safe_neighbors = max(1, min(min_class_count, inner_train_size))
             params_grid[key] = _safe_values(params_grid[key], max_safe_neighbors)
+            
+        # Leave 'feature_selector__threshold' untouched since decimals are safe
 
     return params_grid
 
 def run_classification(X, Y, classifier, classifier_grid, selector, selector_grid, text=""):
     print(f"\n ------ {text} ------")
 
-    pipeline = make_pipeline(VarianceThreshold(threshold=0.0), selector, StandardScaler(), classifier)
+    pipeline = Pipeline([
+        ('variance_threshold', VarianceThreshold(threshold=0.0)),
+        ('feature_selector', selector),
+        ('scaler', StandardScaler()),
+        ('classifier', classifier)
+    ])
     params_grid = _build_parameter_grid(X, Y, selector_grid, classifier_grid)
 
     all_outer_accuracies = []
@@ -213,7 +204,7 @@ def run_classification(X, Y, classifier, classifier_grid, selector, selector_gri
     return stats
 
 def run_all_combinations(X, Y, title=""):
-    results_dir = Path("results")
+    results_dir = Path("RESULTS")
     results_dir.mkdir(parents=True, exist_ok=True)
     
     # CRITICAL FIX: Removed illegal colon character (:) from timestamp string format
