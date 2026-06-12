@@ -138,10 +138,10 @@ def summarise_window(acc_window, lin_acc_window, gyro_window, gravity_window, or
             "gyro_mag_std": np.nan,
             "gyro_mag_min": np.nan,
             "gyro_mag_max": np.nan,
-            "gravity_mag_mean": np.nan,
-            "gravity_mag_std": np.nan,
-            "gravity_mag_min": np.nan,
-            "gravity_mag_max": np.nan,
+            # "gravity_mag_mean": np.nan,
+            # "gravity_mag_std": np.nan,
+            # "gravity_mag_min": np.nan,
+            # "gravity_mag_max": np.nan,
             "yaw_mean": np.nan,
             "yaw_std": np.nan,
             "yaw_min": np.nan,
@@ -186,14 +186,14 @@ def summarise_window(acc_window, lin_acc_window, gyro_window, gravity_window, or
     )
     features.update(summarize_series(gyro_mag, "gyro_mag"))
 
-    # Gravity magnitude
-    gravity_mag = magnitude(
-        gravity_window,
-        "Gravity X (m/s^2)",
-        "Gravity Y (m/s^2)",
-        "Gravity Z (m/s^2)"
-    )
-    features.update(summarize_series(gravity_mag, "gravity_mag"))
+    # # Gravity magnitude
+    # gravity_mag = magnitude(
+    #     gravity_window,
+    #     "Gravity X (m/s^2)",
+    #     "Gravity Y (m/s^2)",
+    #     "Gravity Z (m/s^2)"
+    # )
+    # features.update(summarize_series(gravity_mag, "gravity_mag"))
 
     # Orientation summaries: mean, std, min, max
     for col in ["Yaw (°)", "Pitch (°)", "Roll (°)"]:
@@ -266,7 +266,7 @@ def summarize_batch(batch_root, drop_metadata=False, window_size=None):
             attempt_folder / "Accelerometer.csv",
             attempt_folder / "Linear Accelerometer.csv",
             attempt_folder / "Gyroscope.csv",
-            attempt_folder / "Gravity.csv",
+            # attempt_folder / "Gravity.csv",
             attempt_folder / "Orientation.csv",
         ]
 
