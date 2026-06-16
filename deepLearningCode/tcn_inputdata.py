@@ -183,7 +183,7 @@ def standardize_train_test_sequences(X_train, X_test):
 if __name__ == "__main__":
 	# Replace this with your existing combined dataframe if you already have it in memory.
 	# The important point is that each row is one sensor sample and each attempt has an attempt_id.
-	full_df = pd.read_csv("your_combined_attempt_dataframe.csv")
+	full_df = pd.read_csv("tcn_raw_concatenated.csv")
 
 	# Create angle features first, then use the sin/cos columns instead of raw yaw/pitch/roll.
 	full_df, angle_sensor_cols = add_angle_sin_cos_features(
@@ -224,6 +224,6 @@ if __name__ == "__main__":
 
 	print("X_train_scaled shape:", X_train_scaled.shape)
 	print("X_test_scaled shape:", X_test_scaled.shape)
-
+	
 	# If you want cross-validation instead of a single split, replace train_test_split
 	# with StratifiedKFold and call standardize_train_test_sequences inside each fold.
