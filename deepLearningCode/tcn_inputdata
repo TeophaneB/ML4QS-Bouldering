@@ -1,0 +1,229 @@
+import numpy as np
+import pandas as pd
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+
+
+def _ensure_columns(df, required_columns, context="dataframe"):
+	missing_columns = [column for column in required_columns if column not in df.columns]
+	if missing_columns:
+		raise KeyError(f"Missing columns in {context}: {missing_columns}")
+
+
+def add_angle_sin_cos_features(df, angle_cols=("yaw", "pitch", "roll")):
+	"""Create sine/cosine versions of angle columns and return the updated dataframe.
+
+	Angles are circular, so using sin/cos is safer than using raw degrees directly.
+	"""
+	df = df.copy()
+	angle_feature_cols = []
+
+	for angle_col in angle_cols:
+		if angle_col not in df.columns:
+			raise KeyError(f"Angle column not found: {angle_col}")
+
+		radians = np.deg2rad(df[angle_col].astype(float))
+		sin_col = f"sin_{angle_col}"
+		cos_col = f"cos_{angle_col}"
+
+		df[sin_col] = np.sin(radians)
+		df[cos_col] = np.cos(radians)
+		angle_feature_cols.extend([sin_col, cos_col])
+
+	return df, angle_feature_cols
+
+
+def _fill_missing_sensor_values(df_attempt, sensor_cols):
+	"""Fill missing sensor values inside one attempt using linear interpolation."""
+	df_attempt = df_attempt.copy()
+
+	if df_attempt[sensor_cols].isna().any().any():
+		df_attempt[sensor_cols] = df_attempt[sensor_cols].interpolate(
+			method="linear",
+			limit_direction="both",
+		)
+		df_attempt[sensor_cols] = df_attempt[sensor_cols].ffill().bfill()
+
+	return df_attempt
+
+
+def resample_attempt_to_fixed_steps(df_attempt, time_col, sensor_cols, n_steps=500):
+	"""Resample one complete attempt to exactly n_steps evenly spaced time points.
+
+	This does NOT take the first 500 original rows. It uses the full attempt duration
+	and compresses or stretches that entire climb into 500 normalized temporal points.
+	A 20-second attempt, 40-second attempt, and 80-second attempt all become 500 steps,
+	but each still represents the full climb from start to finish.
+	"""
+	_ensure_columns(df_attempt, [time_col] + list(sensor_cols), context="attempt dataframe")
+
+	if len(df_attempt) < 2:
+		raise ValueError("Attempt has fewer than 2 rows")
+
+	attempt = df_attempt.sort_values(time_col).copy()
+	attempt = attempt.dropna(subset=[time_col])
+
+	if len(attempt) < 2:
+		raise ValueError("Attempt has fewer than 2 valid time rows")
+
+	attempt = attempt[[time_col] + list(sensor_cols)].copy()
+	attempt = _fill_missing_sensor_values(attempt, sensor_cols)
+
+	if attempt[sensor_cols].isna().any().any():
+		raise ValueError("Attempt still contains missing sensor values after interpolation")
+
+	# Make time start at 0 for every attempt so all climbs are aligned from start to end.
+	attempt[time_col] = attempt[time_col] - attempt[time_col].iloc[0]
+	attempt = attempt.drop_duplicates(subset=time_col, keep="last")
+	attempt = attempt.sort_values(time_col)
+
+	if len(attempt) < 2:
+		raise ValueError("Attempt does not have enough unique time points after cleanup")
+
+	time_values = attempt[time_col].to_numpy(dtype=float)
+	sensor_values = attempt[sensor_cols].to_numpy(dtype=float)
+	duration_seconds = float(time_values[-1])
+
+	# Recreate the full attempt on a fixed, normalized time grid.
+	new_time = np.linspace(0.0, duration_seconds, n_steps)
+
+	if duration_seconds == 0.0:
+		# If the attempt has zero duration after cleanup, repeat the first sample.
+		return np.repeat(sensor_values[:1], n_steps, axis=0)
+
+	resampled = np.empty((n_steps, len(sensor_cols)), dtype=float)
+	for channel_index, _ in enumerate(sensor_cols):
+		resampled[:, channel_index] = np.interp(
+			new_time,
+			time_values,
+			sensor_values[:, channel_index],
+		)
+
+	return resampled
+
+
+def build_tcn_dataset(full_df, attempt_id_col, time_col, sensor_cols, label_col, n_steps=500):
+	"""Build fixed-length TCN input arrays from a dataframe with all attempts."""
+	_ensure_columns(
+		full_df,
+		[attempt_id_col, time_col, label_col] + list(sensor_cols),
+		context="full dataframe",
+	)
+
+	X = []
+	y = []
+	durations = []
+
+	for attempt_id, df_attempt in full_df.groupby(attempt_id_col, sort=False):
+		df_attempt = df_attempt.sort_values(time_col).copy()
+
+		if len(df_attempt) < 2:
+			print(f"Skipping attempt {attempt_id}: fewer than 2 rows")
+			continue
+
+		labels = df_attempt[label_col].dropna().unique()
+		if len(labels) == 0:
+			print(f"Skipping attempt {attempt_id}: missing label")
+			continue
+		if len(labels) > 1:
+			print(f"Skipping attempt {attempt_id}: multiple labels found {labels}")
+			continue
+
+		try:
+			resampled_attempt = resample_attempt_to_fixed_steps(
+				df_attempt=df_attempt,
+				time_col=time_col,
+				sensor_cols=sensor_cols,
+				n_steps=n_steps,
+			)
+		except ValueError as exc:
+			print(f"Skipping attempt {attempt_id}: {exc}")
+			continue
+
+		duration_seconds = float(df_attempt[time_col].max() - df_attempt[time_col].min())
+
+		X.append(resampled_attempt)
+		y.append(labels[0])
+		durations.append(duration_seconds)
+
+	if not X:
+		return (
+			np.empty((0, n_steps, len(sensor_cols)), dtype=float),
+			np.asarray(y),
+			np.asarray(durations, dtype=float),
+		)
+
+	X = np.asarray(X, dtype=float)
+	y = np.asarray(y)
+	durations = np.asarray(durations, dtype=float)
+
+	return X, y, durations
+
+
+def standardize_train_test_sequences(X_train, X_test):
+	"""Fit a StandardScaler on the training sequences only and transform train/test."""
+	if X_train.ndim != 3 or X_test.ndim != 3:
+		raise ValueError("X_train and X_test must both have shape (attempts, time_steps, channels)")
+
+	n_channels = X_train.shape[2]
+	scaler = StandardScaler()
+
+	X_train_2d = X_train.reshape(-1, n_channels)
+	X_test_2d = X_test.reshape(-1, n_channels)
+
+	scaler.fit(X_train_2d)
+
+	X_train_scaled = scaler.transform(X_train_2d).reshape(X_train.shape)
+	X_test_scaled = scaler.transform(X_test_2d).reshape(X_test.shape)
+
+	return X_train_scaled, X_test_scaled, scaler
+
+
+if __name__ == "__main__":
+	# Replace this with your existing combined dataframe if you already have it in memory.
+	# The important point is that each row is one sensor sample and each attempt has an attempt_id.
+	full_df = pd.read_csv("your_combined_attempt_dataframe.csv")
+
+	# Create angle features first, then use the sin/cos columns instead of raw yaw/pitch/roll.
+	full_df, angle_sensor_cols = add_angle_sin_cos_features(
+		full_df,
+		angle_cols=("yaw", "pitch", "roll"),
+	)
+
+	sensor_cols = [
+		"acc_x", "acc_y", "acc_z",
+		"lin_acc_x", "lin_acc_y", "lin_acc_z",
+		"gyro_x", "gyro_y", "gyro_z",
+	] + angle_sensor_cols
+
+	X, y, durations = build_tcn_dataset(
+		full_df=full_df,
+		attempt_id_col="attempt_id",
+		time_col="time_seconds",
+		sensor_cols=sensor_cols,
+		label_col="difficulty_label",
+		n_steps=500,
+	)
+
+	print("X shape:", X.shape)
+	print("y shape:", y.shape)
+	print("durations shape:", durations.shape)
+
+	# Example train/test split with stratification so class balance is preserved.
+	X_train, X_test, y_train, y_test = train_test_split(
+		X,
+		y,
+		test_size=0.2,
+		random_state=42,
+		stratify=y,
+	)
+
+	# Fit the scaler only on the training data to avoid data leakage.
+	X_train_scaled, X_test_scaled, scaler = standardize_train_test_sequences(X_train, X_test)
+
+	print("X_train_scaled shape:", X_train_scaled.shape)
+	print("X_test_scaled shape:", X_test_scaled.shape)
+
+	# If you want cross-validation instead of a single split, replace train_test_split
+	# with StratifiedKFold and call standardize_train_test_sequences inside each fold.
