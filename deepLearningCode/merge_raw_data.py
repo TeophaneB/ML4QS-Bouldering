@@ -1,6 +1,13 @@
 from pathlib import Path
+import re
 
 import pandas as pd
+
+
+ATTEMPT_LABEL_PATTERN = re.compile(
+	r"^L\d+\s+(?P<style>N|O|S|D)\s+(?P<topped>Y|No)\b",
+	re.IGNORECASE,
+)
 
 
 def parse_difficulty_label(folder_name):
@@ -16,6 +23,32 @@ def parse_difficulty_label(folder_name):
 
 	return None
 
+def _parse_attempt_labels(folder_name):
+	"""Extract the style and topped tokens from an attempt folder name."""
+	match = ATTEMPT_LABEL_PATTERN.match(Path(folder_name).name)
+	if not match:
+		return None, None
+
+	style_token = match.group("style").upper()
+	topped_token = match.group("topped").upper()
+
+	style_map = {"N": 0, "O": 1, "S": 2, "D": 3}
+	topped_map = {"Y": 1, "NO": 0}
+
+	return style_map.get(style_token), topped_map.get(topped_token)
+
+
+def parse_style_label(folder_name):
+	"""Convert the attempt folder name into a simple style label."""
+	style_label, _ = _parse_attempt_labels(folder_name)
+	return style_label
+
+
+def parse_topped_label(folder_name):
+	"""Convert the attempt folder name into a simple topped label."""
+	_, topped_label = _parse_attempt_labels(folder_name)
+	return topped_label
+
 
 def _read_and_rename(csv_path, rename_map):
 	df = pd.read_csv(csv_path)
@@ -24,7 +57,7 @@ def _read_and_rename(csv_path, rename_map):
 	return df
 
 
-def merge_attempt_folder(attempt_folder, attempt_id=None, difficulty_label=None, tolerance_seconds=0.02):
+def merge_attempt_folder(attempt_folder, attempt_id=None, difficulty_label=None, style_label=None, topped_label=None, tolerance_seconds=0.02):
 	"""Merge all sensor CSV files from one attempt folder into one dataframe.
 
 	The accelerometer timestamps are used as the base time axis. The other sensor
@@ -35,7 +68,10 @@ def merge_attempt_folder(attempt_folder, attempt_id=None, difficulty_label=None,
 		attempt_id = attempt_folder.name
 	if difficulty_label is None:
 		difficulty_label = parse_difficulty_label(attempt_folder.name)
-
+	if style_label is None:
+		style_label = parse_style_label(attempt_folder.name)
+	if topped_label is None:
+		topped_label = parse_topped_label(attempt_folder.name)
 	required_files = {
 		"Accelerometer.csv",
 		"Linear Accelerometer.csv",
@@ -113,6 +149,8 @@ def merge_attempt_folder(attempt_folder, attempt_id=None, difficulty_label=None,
 
 	merged["attempt_id"] = attempt_id
 	merged["difficulty_label"] = difficulty_label
+	merged["style_label"] = style_label
+	merged["topped_label"] = topped_label
 	merged["duration_seconds"] = merged["time_seconds"].max() - merged["time_seconds"].min()
 
 	return merged
@@ -176,7 +214,7 @@ def build_concatenated_dataframe(data_root, tolerance_seconds=0.02):
 if __name__ == "__main__":
 	# This script creates one long dataframe where every row is one timestamp sample.
 	# That is the format expected by tcn_inputdata.py.
-	data_root = Path("BOULDERING_DATA")
+	data_root = Path("../BOULDERING_DATA")
 	output_path = Path("tcn_raw_concatenated.csv")
 	mapping_path = Path("TCNattempt_id_mapping.csv")
 
