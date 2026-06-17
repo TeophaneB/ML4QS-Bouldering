@@ -170,6 +170,8 @@ def standardize_train_test_sequences(X_train, X_test):
 	n_channels = X_train.shape[2]
 	scaler = StandardScaler()
 
+	print("FOR TEO: NUM OF CHANNELS:", n_channels)
+
 	X_train_2d = X_train.reshape(-1, n_channels)
 	X_test_2d = X_test.reshape(-1, n_channels)
 
@@ -184,7 +186,7 @@ def standardize_train_test_sequences(X_train, X_test):
 if __name__ == "__main__":
 	# Replace this with your existing combined dataframe if you already have it in memory.
 	# The important point is that each row is one sensor sample and each attempt has an attempt_id.
-	full_df = pd.read_csv("tcn_raw_concatenated.csv")
+	full_df = pd.read_csv("deepLearningCode\\tcn_raw_concatenated.csv")
 
 	# Create angle features first, then use the sin/cos columns instead of raw yaw/pitch/roll.
 	full_df, angle_sensor_cols = add_angle_sin_cos_features(
@@ -197,6 +199,8 @@ if __name__ == "__main__":
 		"lin_acc_x", "lin_acc_y", "lin_acc_z",
 		"gyro_x", "gyro_y", "gyro_z",
 	] + angle_sensor_cols
+
+	print("FOR TEO: NUM OF SENSORS:", len(sensor_cols))
 
 	X, y, durations = build_tcn_dataset(
 		full_df=full_df,
