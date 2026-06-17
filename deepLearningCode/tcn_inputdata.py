@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import csv
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -206,10 +207,10 @@ if __name__ == "__main__":
 		n_steps=500,
 	)
 
-	print("X shape:", X.shape)
-	print("y shape:", y.shape)
-	print("durations shape:", durations.shape)
-
+	# print("X shape:", X.shape)
+	# print("y shape:", y.shape)
+	# print("durations shape:", durations.shape)
+	   # Print the first attempt's label for inspection
 	# Example train/test split with stratification so class balance is preserved.
 	X_train, X_test, y_train, y_test = train_test_split(
 		X,
@@ -221,9 +222,14 @@ if __name__ == "__main__":
 
 	# Fit the scaler only on the training data to avoid data leakage.
 	X_train_scaled, X_test_scaled, scaler = standardize_train_test_sequences(X_train, X_test)
-
-	print("X_train_scaled shape:", X_train_scaled.shape)
-	print("X_test_scaled shape:", X_test_scaled.shape)
+	print(X_train_scaled.shape, X_test_scaled.shape, y_train.shape, y_test.shape)
+	# Saves X_train_scaled and X_test_scaled to CSV files for later use in TCN model training and evaluation.
+	# np.savetxt("X_train_scaled.csv", X_train_scaled.reshape(X_train_scaled.shape[0], -1), delimiter=",")
+	# np.savetxt("X_test_scaled.csv", X_test_scaled.reshape(X_test_scaled.shape[0], -1), delimiter=",")
+	# np.savetxt("y_train.csv", y_train, delimiter=",")
+	# np.savetxt("y_test.csv", y_test, delimiter=",")
+	# print("X_train_scaled shape:", X_train_scaled.shape)
+	# print("X_test_scaled shape:", X_test_scaled.shape)
 	
 	# If you want cross-validation instead of a single split, replace train_test_split
 	# with StratifiedKFold and call standardize_train_test_sequences inside each fold.
