@@ -95,14 +95,15 @@ train_loader = DataLoader(
 # 3. INSTANTIATE YOUR MODEL CONFIGURATION
 # =====================================================================
 NUM_CLASSES = 3  # Example: Easy, Medium, Hard
+NUM_CHANNELS = [8, 16]  
 
 model = TCN(
     num_inputs=15,               # Matching your 15 sensor channels
-    num_channels=[32, 64, 128],  # Expands feature representation deeper into the network
+    num_channels=NUM_CHANNELS,  # Expands feature representation deeper into the network
     kernel_size=4,
     dilations=None,              # Automatically calculated
     dilation_reset=None,
-    dropout=0.1,
+    dropout=0.5,
     causal=True,                 # Prevents looking ahead into future time-steps
     use_norm='weight_norm',
     activation='relu',
@@ -119,7 +120,7 @@ model = TCN(
 
 # Because we are doing classification, we add a simple Linear head to 
 # project the final hidden states into our class dimensions.
-classification_head = nn.Linear(128, NUM_CLASSES) # 128 matches the last number in num_channels
+classification_head = nn.Linear(NUM_CHANNELS[-1], NUM_CLASSES) 
 
 # Move your network to your target compute device (GPU if available)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -134,7 +135,8 @@ criterion = nn.CrossEntropyLoss()
 # Optimize parameters for both the TCN backbone and the classification head
 optimizer = optim.Adam(
     list(model.parameters()) + list(classification_head.parameters()), 
-    lr=0.001
+    lr=0.001,
+    weight_decay=1e-5
 )
 
 EPOCHS = 10
