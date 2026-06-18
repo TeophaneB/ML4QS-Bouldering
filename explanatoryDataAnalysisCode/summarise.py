@@ -165,7 +165,7 @@ def summarize_dataset(batch_root):
 
 if __name__ == "__main__":
     dataset_summary = summarize_dataset(
-        "BOULDERING_DATA",
+        "/Users/karm1616/Desktop/Univeristy/Masters/Machine Learning for the Quanitfied Self/ML4QS-Bouldering/BOULDERING_DATA",
     )
 
     print(dataset_summary.head())

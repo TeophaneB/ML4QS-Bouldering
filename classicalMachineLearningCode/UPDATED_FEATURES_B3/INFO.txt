@@ -1,0 +1,2 @@
+I used this folder to generate the features for all the data in a window size of 1 --> this was used to get the labels of each attempt and plot the label distributions
+So dont bother using this folder for anything else. 

@@ -23,33 +23,27 @@ def parse_difficulty_label(folder_name):
 
 	return None
 
-def _parse_attempt_labels(folder_name):
-	"""Extract the style and topped tokens from an attempt folder name."""
-	match = ATTEMPT_LABEL_PATTERN.match(Path(folder_name).name)
-	if not match:
-		return None, None
-
-	style_token = match.group("style").upper()
-	topped_token = match.group("topped").upper()
-
-	style_map = {"N": 0, "O": 1, "S": 2, "D": 3}
-	topped_map = {"Y": 1, "NO": 0}
-
-	return style_map.get(style_token), topped_map.get(topped_token)
-
-
 def parse_style_label(folder_name):
 	"""Convert the attempt folder name into a simple style label."""
-	style_label, _ = _parse_attempt_labels(folder_name)
-	return style_label
+	match = ATTEMPT_LABEL_PATTERN.match(Path(folder_name).name)
+	if not match:
+		return None
+
+	style_token = match.group("style").upper()
+	style_map = {"N": 0, "O": 1, "S": 2, "D": 3}
+	return style_map.get(style_token)
 
 
 def parse_topped_label(folder_name):
 	"""Convert the attempt folder name into a simple topped label."""
-	_, topped_label = _parse_attempt_labels(folder_name)
-	return topped_label
+	match = ATTEMPT_LABEL_PATTERN.match(Path(folder_name).name)
+	if not match:
+		return None
 
-
+	topped_token = match.group("topped").upper()
+	topped_map = {"Y": 1, "NO": 0}
+	return topped_map.get(topped_token)
+	
 def _read_and_rename(csv_path, rename_map):
 	df = pd.read_csv(csv_path)
 	df = df.rename(columns=rename_map)

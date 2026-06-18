@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import pandas as pd 
 
 # Load the dataset
-df = pd.read_csv("FEATURES/bouldering_summary_1.csv")
+df = pd.read_csv("/Users/karm1616/Desktop/Univeristy/Masters/Machine Learning for the Quanitfied Self/ML4QS-Bouldering/classicalMachineLearningCode/UPDATED_FEATURES_B3/bouldering_summary_1.csv")
 # Count the occurrences of each category in the relevant columns
 difficulty_counts = df["difficulty"].value_counts().sort_index()
 topped_counts = df["topped"].value_counts().sort_index()
@@ -35,7 +35,7 @@ for ax, (counts, title, xlabel) in zip(axes, datasets):
     # Rotate labels slightly if needed
     ax.tick_params(axis="x", rotation=30)
 
-plt.suptitle("Distribution of Batch 1 Bouldering Attempts", fontsize=14)
+plt.suptitle("Distribution of Labels", fontsize=14)
 plt.tight_layout()
 
 # Save as one image

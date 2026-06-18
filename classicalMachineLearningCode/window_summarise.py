@@ -11,10 +11,14 @@ the usefulness of the resulting set of features.
 
 # TODO highlight the final best model when printing results
 
-BOULDERING_ROOT = "BOULDERING_DATA/"
+BOULDERING_ROOT = "/Users/karm1616/Desktop/Univeristy/Masters/Machine Learning for the Quanitfied Self/ML4QS-Bouldering/BOULDERING_DATA"
+ATTEMPT_LABEL_PATTERN = re.compile(
+	r"^L\d+\s+(?P<style>N|O|S|D)\s+(?P<topped>Y|No)\b",
+	re.IGNORECASE,
+)
 
 # idea 2 # of final rows per attempt
-WINDOW_SIZES = [1, 5, 10, 20, 50, 100]  # Number of rows per attempt (e.g., 1 row = whole attempt, 2 rows = split attempt in half, etc.)
+WINDOW_SIZES = [1, 5, 10, 20, 50, 100] # Number of rows per attempt (e.g., 1 row = whole attempt, 2 rows = split attempt in half, etc.)
 
 def magnitude(df, x_col, y_col, z_col):
     """
@@ -39,7 +43,7 @@ def get_metadata(folder_name):
     """
     Regex to extract metadata from folder name: level, style, topped, participant, date
     Example folder name: "L1 N Y teo2026 2024-05-01 14-30
-    Numerical mappings: difficulty (1-3), style (1-3), topped (0-1)
+    Numerical mappings: difficulty (1-3), style (1-4), topped (0-1)
     """
     parts = folder_name.split()
     features = {}
@@ -55,12 +59,24 @@ def get_metadata(folder_name):
         diff = 0
     features["difficulty"] = diff
 
-    style = parts[1].upper() if len(parts) > 1 else ""
-    style_map = {"N": 1, "O": 2, "S": 3, "D": 4}
-    features["style"] = style_map.get(style, 0)
+    match = ATTEMPT_LABEL_PATTERN.match(folder_name)
+    if match:
+        style_token = match.group("style").upper()
+        style_map = {"N": 0, "O": 1, "S": 2, "D": 3}
+        features["style"] = style_map.get(style_token, 0)
 
-    topped_value = parts[2] if len(parts) > 2 else ""
-    features["topped"] = 1 if topped_value.lower() in {"y", "yes"} else 0
+        topped_token = match.group("topped").upper()
+        topped_map = {"Y": 1, "No": 0}
+        features["topped"] = topped_map.get(topped_token, 0)
+    else:        
+        features["style"] = "INVALID"
+        features["topped"] = "INVALID"
+    # style = parts[1].upper() if len(parts) > 1 else ""
+    # style_map = {"N": 1, "O": 2, "S": 3, "D": 4}
+    # features["style"] = style_map.get(style, 0)
+
+    # topped_value = parts[2] if len(parts) > 2 else ""
+    # features["topped"] = 1 if topped_value.lower() in {"y", "yes"} else 0
 
     return features
 
@@ -327,7 +343,7 @@ def summarize_all_data(window_size):
     return dataset_features, attempt_mapping
 
 if __name__ == "__main__":
-    os.makedirs("FEATURES", exist_ok=True)
+    os.makedirs("UPDATED_FEATURES_B3", exist_ok=True)
 
     # loop through each window size and save attempt table
     for window_size in WINDOW_SIZES:
@@ -336,10 +352,10 @@ if __name__ == "__main__":
         print(f"Summary for window size {window_size}:")
         print(attempt_features.head())
 
-        output_name = f"FEATURES/bouldering_summary_{window_size}.csv"
+        output_name = f"UPDATED_FEATURES_B3/bouldering_summary_{window_size}.csv"
         attempt_features.to_csv(output_name, index=False)
         
         # Save the mapping file with index -> attempt_id mapping
-        mapping_name = f"FEATURES/bouldering_summary_{window_size}_mapping.csv"
+        mapping_name = f"UPDATED_FEATURES_B3/bouldering_summary_{window_size}_mapping.csv"
         attempt_mapping.to_csv(mapping_name, index=True)
         print(f"Saved mapping to {mapping_name}")
