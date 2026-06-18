@@ -389,7 +389,6 @@ def build_best_model_filename(best_row: pd.Series) -> str:
     safe_selector = selector.replace("/", "-")
     return f"best_model_found_window({window_size})_({safe_classifier}, {safe_selector}).csv"
 
-
 def main() -> None:
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
