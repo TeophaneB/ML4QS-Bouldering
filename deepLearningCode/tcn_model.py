@@ -9,12 +9,16 @@ import pandas as pd
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
-from sklearn.metrics import accuracy_score, classification_report, f1_score
+from sklearn.metrics import accuracy_score, classification_report, f1_score, confusion_matrix, confusion_matrix, ConfusionMatrixDisplay
+import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
+
 from pytorch_tcn import TCN
 from sklearn.preprocessing import StandardScaler
 N_STEPS = 500  # Number of time steps to resample each attempt to.
+RUN_REPEATED_EVALUATION = True
+REPEATED_EVALUATION_SEEDS = [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]  # Seeds for repeated evaluation runs.
 
 def _ensure_columns(df, required_columns, context="dataframe"):
 	missing_columns = [column for column in required_columns if column not in df.columns]
@@ -85,6 +89,18 @@ def standardize_tabular_data(X_train, X_val, X_test):
 	X_test_scaled = scaler.transform(X_test)
 
 	return X_train_scaled, X_val_scaled, X_test_scaled, scaler
+
+
+def set_random_seed(seed):
+	"""Set random seeds for reproducible train/validation/test repeats."""
+	np.random.seed(seed)
+	torch.manual_seed(seed)
+	if torch.cuda.is_available():
+		torch.cuda.manual_seed_all(seed)
+
+	if hasattr(torch.backends, "cudnn"):
+		torch.backends.cudnn.deterministic = True
+		torch.backends.cudnn.benchmark = False
 
 
 def resample_attempt_to_fixed_steps(df_attempt, time_col, sensor_cols, n_steps=N_STEPS):
@@ -236,15 +252,29 @@ def standardize_data(X_train, X_test):
 
     return X_train_scaled, X_test_scaled
 
+def plot_confusion_matrix(y_true, y_pred, class_names):
+	"""Plot a simple confusion matrix."""
+	cm = confusion_matrix(y_true, y_pred)
+
+	disp = ConfusionMatrixDisplay(
+		confusion_matrix=cm,
+		display_labels=class_names,
+	)
+
+	disp.plot(values_format="d", cmap="Blues")
+	plt.tight_layout()
+	plt.show()
+	plt.savefig("confusion_matrix_tcn_model.png", dpi=300, bbox_inches="tight")
+
 class TCNClassifier(nn.Module):
-	def __init__(self, num_inputs, metadata_dim, num_classes):
+	def __init__(self, num_inputs, metadata_dim, num_classes, dropout=0.4, kernel_size=2):
 		super().__init__()
 		self.tcn = TCN(
 			num_inputs=num_inputs,
-			num_channels=[16,32], ## ORIGINAL IS 16,32
-			kernel_size=3,
-			dropout=0.2,
-			causal=False,
+			num_channels=[32,32], ## ORIGINAL IS 16,32
+			kernel_size=kernel_size, # original is 3
+			dropout=dropout, # 1. 0.2 # 2 0.5 # 3 0.35 # 4 0.1
+ 			causal=False,
 			use_norm="weight_norm",
 			activation="relu",
 			kernel_initializer="xavier_uniform",
@@ -257,13 +287,13 @@ class TCNClassifier(nn.Module):
 			self.metadata_encoder = nn.Sequential(
 				nn.Linear(metadata_dim, 16),
 				nn.ReLU(),
-				nn.Dropout(0.2),
+				nn.Dropout(dropout),
 		)
 			pooled_dim += 16
 		self.classifier = nn.Sequential(
 			nn.Linear(pooled_dim, 32),
 			nn.ReLU(),
-			nn.Dropout(0.2),
+			nn.Dropout(dropout),
 			nn.Linear(32, num_classes),
 		)
 
@@ -289,13 +319,15 @@ class TCNClassifier(nn.Module):
 		return self.classifier(pooled)
 
 
-def train_tcn_classifier(X, metadata, y):
+def train_tcn_classifier(X, metadata, y, seed=42):
 	"""Split the data, train the TCN, and evaluate on the held-out test set."""
 	X = np.asarray(X)
 	metadata = np.asarray(metadata)
 	y = np.asarray(y)
 	if metadata.ndim == 1:
 		metadata = metadata.reshape(-1, 1)
+
+	set_random_seed(seed)
 
 	label_encoder = LabelEncoder()
 	y_encoded = label_encoder.fit_transform(y)
@@ -310,7 +342,7 @@ def train_tcn_classifier(X, metadata, y):
 		y_encoded,
 		test_size=0.2,
 		stratify=y_encoded,
-		random_state=42,
+		random_state=seed,
 	)
 
 	X_train, X_val, metadata_train, metadata_val, y_train, y_val = train_test_split(
@@ -319,7 +351,7 @@ def train_tcn_classifier(X, metadata, y):
 		y_train_val,
 		test_size=0.2,
 		stratify=y_train_val,
-		random_state=42,
+		random_state=seed,
 	)
 
 	X_train, X_val, X_test, _ = standardize_sequence_data(X_train, X_val, X_test)
@@ -351,13 +383,13 @@ def train_tcn_classifier(X, metadata, y):
 	val_dataset = TensorDataset(X_val_tensor, metadata_val_tensor, y_val_tensor)
 	test_dataset = TensorDataset(X_test_tensor, metadata_test_tensor, y_test_tensor)
 
-	train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
-	val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False)
-	test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
+	train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True)
+	val_loader = DataLoader(val_dataset, batch_size=2, shuffle=False)
+	test_loader = DataLoader(test_dataset, batch_size=2, shuffle=False)
 
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 	model = TCNClassifier(num_inputs=X.shape[2], metadata_dim=metadata.shape[1], num_classes=num_classes).to(device)
-	criterion = nn.CrossEntropyLoss(weight=torch.tensor([3.0, 1.0, 1.0], device=device))  # Adjust weights if needed
+	criterion = nn.CrossEntropyLoss(weight=torch.tensor([1.0, 1.0, 1.0], device=device))  # no longer a class imbalance as before, but hard difficulities appear more than easy and medium 
 	optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
 	max_epochs = 100
 	patience = 10
@@ -447,21 +479,86 @@ def train_tcn_classifier(X, metadata, y):
 	print(classification_report(y_test_true, y_test_pred, target_names=class_names, zero_division=0))
 
 	return {
-		"model": model,
-		"label_encoder": label_encoder,
-		"best_val_macro_f1": best_val_macro_f1,
-		"test_accuracy": test_accuracy,
-		"test_macro_f1": test_macro_f1,
-		"classification_report": classification_report(
-			y_test_true,
-			y_test_pred,
-			target_names=class_names,
-			zero_division=0,
-		),
-		"train_losses": train_losses,
-		"val_losses": val_losses,
-		"val_macro_f1s": val_macro_f1s,
+	"model": model,
+	"label_encoder": label_encoder,
+	"class_names": class_names,
+	"best_val_macro_f1": best_val_macro_f1,
+	"test_accuracy": test_accuracy,
+	"test_macro_f1": test_macro_f1,
+	"classification_report": classification_report(
+		y_test_true,
+		y_test_pred,
+		target_names=class_names,
+		zero_division=0,
+	),
+	"y_test_true": y_test_true,
+	"y_test_pred": y_test_pred,
+	"train_losses": train_losses,
+	"val_losses": val_losses,
+	"val_macro_f1s": val_macro_f1s,
 	}
+
+
+def run_repeated_tcn_evaluation(X, metadata, y, seeds=REPEATED_EVALUATION_SEEDS):
+	"""Run the same training pipeline multiple times with different seeds."""
+	results = []
+
+	for seed in seeds:
+		print(f"\n=== Repeated evaluation run with seed {seed} ===")
+		result = train_tcn_classifier(X, metadata, y, seed=seed)
+		result["seed"] = seed
+		results.append(result)
+
+	metrics = {
+		"best_val_macro_f1": np.asarray([result["best_val_macro_f1"] for result in results], dtype=float),
+		"test_accuracy": np.asarray([result["test_accuracy"] for result in results], dtype=float),
+		"test_macro_f1": np.asarray([result["test_macro_f1"] for result in results], dtype=float),
+	}
+
+	summary = {
+		"runs": results,
+		"summary": {
+			metric_name: {
+				"mean": float(values.mean()),
+				"std": float(values.std(ddof=1)) if len(values) > 1 else 0.0,
+			}
+			for metric_name, values in metrics.items()
+		},
+	}
+
+	print("\nRepeated evaluation summary:")
+	for metric_name, stats in summary["summary"].items():
+		print(f"{metric_name}: mean={stats['mean']:.4f}, std={stats['std']:.4f}")
+
+	# Identify the best run by validation macro F1 and reprint its detailed outputs
+	best_idx = int(np.argmax(metrics["best_val_macro_f1"]))
+	best_run = results[best_idx]
+
+	print("\n=== Best Run Details ===")
+	print(f"Seed: {best_run.get('seed')}")
+	print(f"Best validation macro F1: {best_run.get('best_val_macro_f1'):.4f}")
+	print(f"Test accuracy: {best_run.get('test_accuracy'):.4f}")
+	print(f"Test macro F1: {best_run.get('test_macro_f1'):.4f}")
+	print("Classification report for best run:")
+	print(best_run.get('classification_report'))
+
+	
+	# Confusion matrix for best run
+	if best_run.get('y_test_true') is not None and best_run.get('y_test_pred') is not None:
+		cm = confusion_matrix(best_run.get('y_test_true'), best_run.get('y_test_pred'))
+		print("\nConfusion matrix (rows=true, cols=pred):")
+		print(cm)
+		label_names = None
+		if best_run.get('label_encoder') is not None:
+			label_names = list(best_run.get('label_encoder').classes_)
+		if label_names:
+			print("Labels:", label_names)
+	
+	plot_confusion_matrix(
+	best_run["y_test_true"],
+	best_run["y_test_pred"],
+	best_run["class_names"],)
+	return summary
 
 
 if __name__ == "__main__":
@@ -501,4 +598,7 @@ if __name__ == "__main__":
 	print("y shape:", y.shape)
 	print("durations shape:", durations.shape)
 
-	train_tcn_classifier(X, metadata, y)
+	if RUN_REPEATED_EVALUATION:
+		run_repeated_tcn_evaluation(X, metadata, y)
+	else:
+		train_tcn_classifier(X, metadata, y)

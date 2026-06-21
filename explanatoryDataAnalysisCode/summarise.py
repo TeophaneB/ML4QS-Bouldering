@@ -3,6 +3,20 @@ import numpy as np
 from pathlib import Path
 
 
+def parse_difficulty_label(folder_name):
+    """Map folder difficulty token (L1-L6) to 1-3 buckets."""
+    first_token = Path(folder_name).name.split()[0].upper() if Path(folder_name).name.split() else ""
+
+    if first_token in {"L1", "L2"}:
+        return 1
+    if first_token in {"L3", "L4"}:
+        return 2
+    if first_token in {"L5", "L6"}:
+        return 3
+
+    return None
+
+
 def magnitude(df, x_col, y_col, z_col):
     """
     Compute vector magnitude: sqrt(x^2 + y^2 + z^2)
@@ -40,7 +54,7 @@ def summarize_attempt(attempt_folder, attempt_id=None, difficulty=None, topped=N
     acc = pd.read_csv(attempt_folder / "Accelerometer.csv")
     lin_acc = pd.read_csv(attempt_folder / "Linear Accelerometer.csv")
     gyro = pd.read_csv(attempt_folder / "Gyroscope.csv")
-    gravity = pd.read_csv(attempt_folder / "Gravity.csv")
+    # gravity = pd.read_csv(attempt_folder / "Gravity.csv")
     orientation = pd.read_csv(attempt_folder / "Orientation.csv")
 
     features = {}
@@ -82,13 +96,13 @@ def summarize_attempt(attempt_folder, attempt_id=None, difficulty=None, topped=N
     features.update(summarize_series(gyro_mag, "gyro_mag"))
 
     # Gravity magnitude
-    gravity_mag = magnitude(
-        gravity,
-        "Gravity X (m/s^2)",
-        "Gravity Y (m/s^2)",
-        "Gravity Z (m/s^2)"
-    )
-    features.update(summarize_series(gravity_mag, "gravity_mag"))
+    # gravity_mag = magnitude(
+    #     gravity,
+    #     "Gravity X (m/s^2)",
+    #     "Gravity Y (m/s^2)",
+    #     "Gravity Z (m/s^2)"
+    # )
+    # features.update(summarize_series(gravity_mag, "gravity_mag"))
 
     # Orientation summaries: mean, std, min, max
     for col in ["Yaw (°)", "Pitch (°)", "Roll (°)"]:
@@ -103,7 +117,7 @@ def summarize_attempt(attempt_folder, attempt_id=None, difficulty=None, topped=N
     return pd.DataFrame([features])
 
 
-def summarize_batch(batch_root, drop_metadata=True):
+def summarize_batch(batch_root, drop_metadata=False):
     """
     Summarise every attempt folder inside a batch directory.
 
@@ -118,15 +132,17 @@ def summarize_batch(batch_root, drop_metadata=True):
         required_files = [
             attempt_folder / "Accelerometer.csv",
             attempt_folder / "Linear Accelerometer.csv",
-            attempt_folder / "Gyroscope.csv",
-            attempt_folder / "Gravity.csv",
+            # attempt_folder / "Gyroscope.csv",
             attempt_folder / "Orientation.csv",
         ]
 
         if not all(path.exists() for path in required_files):
             continue
 
-        summary = summarize_attempt(attempt_folder)
+        summary = summarize_attempt(
+            attempt_folder,
+            difficulty=parse_difficulty_label(attempt_folder.name),
+        )
         summaries.append(summary)
 
     if not summaries:
@@ -143,7 +159,7 @@ def summarize_batch(batch_root, drop_metadata=True):
     return batch_features
 
 
-def summarize_dataset(batch_root):
+def summarize_dataset(batch_root, split_by_difficulty=True):
     """
     Summarise the whole batch directory into one global feature table.
 
@@ -151,22 +167,39 @@ def summarize_dataset(batch_root):
     effectively duplicates, then computes mean, std, min, and max across
     the per-attempt feature columns.
     """
-
-    batch_features = summarize_batch(batch_root, drop_metadata=True)
+    batch_features = summarize_batch(batch_root, drop_metadata=False)
 
     if batch_features.empty:
         return pd.DataFrame()
 
-    numeric_features = batch_features.select_dtypes(include=[np.number])
-    global_summary = numeric_features.agg(["mean", "std", "min", "max"]).T
-    global_summary.columns = [f"dataset_{stat}" for stat in global_summary.columns]
+    if not split_by_difficulty:
+        numeric_features = batch_features.select_dtypes(include=[np.number])
+        global_summary = numeric_features.agg(["mean", "std", "min", "max"]).T
+        global_summary.columns = [f"dataset_{stat}" for stat in global_summary.columns]
+        return global_summary.reset_index().rename(columns={"index": "feature"})
 
-    return global_summary.reset_index().rename(columns={"index": "feature"})
+    per_difficulty_summaries = []
+    for difficulty, group_df in batch_features.groupby("difficulty", dropna=True):
+        numeric_features = group_df.select_dtypes(include=[np.number]).drop(columns=["difficulty"], errors="ignore")
+        difficulty_summary = numeric_features.agg(["mean", "std", "min", "max"]).T
+        difficulty_summary.columns = [f"dataset_{stat}" for stat in difficulty_summary.columns]
+        difficulty_summary = difficulty_summary.reset_index().rename(columns={"index": "feature"})
+        difficulty_summary.insert(0, "difficulty", int(difficulty))
+        per_difficulty_summaries.append(difficulty_summary)
+
+    if not per_difficulty_summaries:
+        return pd.DataFrame(columns=["difficulty", "feature", "dataset_mean", "dataset_std", "dataset_min", "dataset_max"])
+
+    return pd.concat(per_difficulty_summaries, ignore_index=True)
 
 if __name__ == "__main__":
+    SPLIT_BY_DIFFICULTY = True
+
     dataset_summary = summarize_dataset(
         "/Users/karm1616/Desktop/Univeristy/Masters/Machine Learning for the Quanitfied Self/ML4QS-Bouldering/BOULDERING_DATA",
+        split_by_difficulty=SPLIT_BY_DIFFICULTY,
     )
 
     print(dataset_summary.head())
-    dataset_summary.to_csv("bouldering_dataset_summary.csv", index=False)
+    output_name = "bouldering_dataset_summary_by_difficulty.csv" if SPLIT_BY_DIFFICULTY else "bouldering_dataset_summary.csv"
+    dataset_summary.to_csv(output_name, index=False)
